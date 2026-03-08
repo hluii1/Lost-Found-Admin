@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lost_and_found/models/user_model.dart';
 import 'package:lost_and_found/utils/app_theme.dart';
+import 'package:intl/intl.dart';
 
 class SearchBrowseScreen extends StatefulWidget {
   final UserModel? user;
@@ -16,10 +17,90 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
 
   String _selectedCategory = 'All Category';
   String _selectedItemType = 'All Types';
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   // Mock data - replace with Firebase query
-  // Mock data - replace with Firebase query
-  final List<_ItemCard> _items = [];
+  final List<_ItemCard> _allItems = [
+    _ItemCard(
+      title: 'iPhone 12 Pro',
+      category: 'Electronics',
+      itemType: 'Lost',
+      description: 'Black iPhone 12 Pro found in the cafeteria.',
+      location: 'Cafeteria',
+      dateFound: '2023-10-15',
+      reportedBy: 'John Doe',
+      status: 'Lost',
+    ),
+    _ItemCard(
+      title: 'Blue Jacket',
+      category: 'Clothing',
+      itemType: 'Found',
+      description: 'Blue jacket found near the library entrance.',
+      location: 'Library Entrance',
+      dateFound: '2023-10-20',
+      reportedBy: 'Jane Smith',
+      status: 'Found',
+    ),
+    _ItemCard(
+      title: 'Mathematics Book',
+      category: 'Books',
+      itemType: 'Lost',
+      description: 'Calculus textbook lost in classroom 101.',
+      location: 'Classroom 101',
+      dateFound: '2023-10-10',
+      reportedBy: 'Bob Johnson',
+      status: 'Lost',
+    ),
+  ];
+
+  List<_ItemCard> get _filteredItems {
+    return _allItems.where((item) {
+      // Search filter
+      final searchText = _searchCtrl.text.toLowerCase();
+      if (searchText.isNotEmpty &&
+          !item.title.toLowerCase().contains(searchText) &&
+          !item.description.toLowerCase().contains(searchText) &&
+          !item.location.toLowerCase().contains(searchText) &&
+          !item.reportedBy.toLowerCase().contains(searchText)) {
+        return false;
+      }
+
+      // Category filter
+      if (_selectedCategory != 'All Category' &&
+          item.category != _selectedCategory) {
+        return false;
+      }
+
+      // Item Type filter
+      if (_selectedItemType != 'All Types' &&
+          item.itemType != _selectedItemType) {
+        return false;
+      }
+
+      // Date filter
+      if (_startDate != null || _endDate != null) {
+        final itemDate = DateTime.parse(item.dateFound);
+        if (_startDate != null && itemDate.isBefore(_startDate!)) {
+          return false;
+        }
+        if (_endDate != null && itemDate.isAfter(_endDate!)) {
+          return false;
+        }
+      }
+
+      return true;
+    }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() {});
+    });
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -146,11 +227,17 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                           ),
                           style: const TextStyle(
                               fontSize: 12, color: AppTheme.textDark),
-                          items: ['All Category', 'Electronics', 'Clothing', 'Books', 'Others']
+                          items: [
+                            'All Category',
+                            'Electronics',
+                            'Clothing',
+                            'Books',
+                            'Others'
+                          ]
                               .map((c) => DropdownMenuItem(
                                   value: c,
-                                  child: Text(c,
-                                      overflow: TextOverflow.ellipsis)))
+                                  child:
+                                      Text(c, overflow: TextOverflow.ellipsis)))
                               .toList(),
                           onChanged: (v) =>
                               setState(() => _selectedCategory = v!),
@@ -176,11 +263,91 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                           items: ['All Types', 'Lost', 'Found']
                               .map((t) => DropdownMenuItem(
                                   value: t,
-                                  child: Text(t,
-                                      overflow: TextOverflow.ellipsis)))
+                                  child:
+                                      Text(t, overflow: TextOverflow.ellipsis)))
                               .toList(),
                           onChanged: (v) =>
                               setState(() => _selectedItemType = v!),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // From Date picker
+                      SizedBox(
+                        width: 100,
+                        height: 42,
+                        child: TextButton(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _startDate ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime.now(),
+                            );
+                            if (picked != null) {
+                              setState(() => _startDate = picked);
+                            }
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            side: BorderSide(
+                                color: AppTheme.textGrey.withOpacity(0.3)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: Text(
+                            _startDate != null
+                                ? DateFormat('MM/dd/yyyy').format(_startDate!)
+                                : 'From Date',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _startDate != null
+                                  ? AppTheme.textDark
+                                  : AppTheme.textGrey.withOpacity(0.6),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // To Date picker
+                      SizedBox(
+                        width: 100,
+                        height: 42,
+                        child: TextButton(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _endDate ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime.now(),
+                            );
+                            if (picked != null) {
+                              setState(() => _endDate = picked);
+                            }
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            side: BorderSide(
+                                color: AppTheme.textGrey.withOpacity(0.3)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: Text(
+                            _endDate != null
+                                ? DateFormat('MM/dd/yyyy').format(_endDate!)
+                                : 'To Date',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _endDate != null
+                                  ? AppTheme.textDark
+                                  : AppTheme.textGrey.withOpacity(0.6),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -213,7 +380,7 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
 
           // ── Results list ───────────────────────────────────────────
           Expanded(
-            child: _items.isEmpty
+            child: _filteredItems.isEmpty
                 ? const _EmptySearchState()
                 : ListView(
                     padding: const EdgeInsets.all(16),
@@ -232,7 +399,8 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                       ),
 
                       // Item cards
-                      ..._items.map((item) => _ItemResultCard(item: item)),
+                      ..._filteredItems
+                          .map((item) => _ItemResultCard(item: item)),
                     ],
                   ),
           ),
@@ -359,9 +527,14 @@ class _ItemResultCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
-                      _InfoRow(icon: Icons.location_on_outlined, text: item.location),
-                      _InfoRow(icon: Icons.calendar_today_outlined, text: item.dateFound),
-                      _InfoRow(icon: Icons.person_outline, text: item.reportedBy),
+                      _InfoRow(
+                          icon: Icons.location_on_outlined,
+                          text: item.location),
+                      _InfoRow(
+                          icon: Icons.calendar_today_outlined,
+                          text: item.dateFound),
+                      _InfoRow(
+                          icon: Icons.person_outline, text: item.reportedBy),
                     ],
                   ),
                 ),
@@ -430,8 +603,6 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
-
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // EMPTY SEARCH STATE

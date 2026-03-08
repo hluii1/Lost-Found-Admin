@@ -1,0 +1,34 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "lost-and-found-555",
+          "appId": "1:59680793432:android:792f169614c60512a2fb2d",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "lost-and-found-555",
+          "configurations": {
+            "android": "1:59680793432:android:792f169614c60512a2fb2d",
+            "ios": "1:59680793432:ios:f85404f1be93ac5fa2fb2d",
+            "macos": "1:59680793432:ios:f85404f1be93ac5fa2fb2d",
+            "web": "1:59680793432:web:03e6601dbadb8205a2fb2d",
+            "windows": "1:59680793432:web:4b07786e3ab599d7a2fb2d"
+          }
+        }
+      }
+    },
+    "firestore": {
+      "rules": "firestore.rules"
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Allow authenticated users to read/write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+    
+    // Allow public read access to user mappings for login/password reset
+    match /userMappings/{studentNumber} {
+      allow read: if true;
+      allow write: if request.auth != null; // Allow authenticated users to create mappings
+    }
+    
+    // Allow anyone to read items (for search/browse)
+    match /items/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Allow users to manage their own claims
+    match /claims/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

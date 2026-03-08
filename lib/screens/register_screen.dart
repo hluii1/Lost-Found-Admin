@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lost_and_found/services/auth_service.dart';
 import 'package:lost_and_found/utils/app_routes.dart';
 import 'package:lost_and_found/utils/app_theme.dart';
@@ -17,18 +18,18 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _formKey              = GlobalKey<FormState>();
-  final _surnameCtrl          = TextEditingController();
-  final _firstNameCtrl        = TextEditingController();
-  final _studentNumCtrl       = TextEditingController();
-  final _emailCtrl            = TextEditingController();
-  final _passwordCtrl         = TextEditingController();
-  final _confirmPasswordCtrl  = TextEditingController();
-  final _authService          = AuthService();
+  final _formKey = GlobalKey<FormState>();
+  final _surnameCtrl = TextEditingController();
+  final _firstNameCtrl = TextEditingController();
+  final _studentNumCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+  final _authService = AuthService();
 
-  bool _isLoading             = false;
-  bool _obscurePassword       = true;
-  bool _obscureConfirm        = true;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
   @override
   void dispose() {
@@ -49,11 +50,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       final user = await _authService.register(
-        surname:       _surnameCtrl.text.trim(),
-        firstName:     _firstNameCtrl.text.trim(),
+        surname: _surnameCtrl.text.trim(),
+        firstName: _firstNameCtrl.text.trim(),
         studentNumber: _studentNumCtrl.text.trim(),
-        ncstEmail:     _emailCtrl.text.trim(),
-        password:      _passwordCtrl.text,
+        ncstEmail: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text,
       );
       if (mounted) {
         Navigator.pushReplacementNamed(
@@ -64,7 +65,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } on AuthException catch (e) {
       _showError(e.message);
-    } catch (_) {
+    } on FirebaseAuthException catch (e) {
+      _showError(e.message ?? 'Registration failed.');
+    } catch (e, stack) {
+      debugPrint('Registration error: $e');
+      debugPrint('$stack');
       _showError('Registration failed. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -118,8 +123,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         hintText: 'Last name',
                         prefixIcon: Icons.badge_outlined,
                         textCapitalization: TextCapitalization.words,
-                        validator: (v) => Validators.validateRequired(
-                            v, fieldName: 'Surname'),
+                        validator: (v) => Validators.validateRequired(v,
+                            fieldName: 'Surname'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -130,8 +135,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         hintText: 'First name',
                         prefixIcon: Icons.person_outline_rounded,
                         textCapitalization: TextCapitalization.words,
-                        validator: (v) => Validators.validateRequired(
-                            v, fieldName: 'First Name'),
+                        validator: (v) => Validators.validateRequired(v,
+                            fieldName: 'First Name'),
                       ),
                     ),
                   ],
@@ -199,8 +204,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     onPressed: () =>
                         setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
-                  validator: (v) => Validators.validateConfirmPassword(
-                      v, _passwordCtrl.text),
+                  validator: (v) =>
+                      Validators.validateConfirmPassword(v, _passwordCtrl.text),
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _register(),
                 ),
