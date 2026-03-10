@@ -509,7 +509,7 @@ class _DashboardBody extends StatelessWidget {
 
           // ── Action cards ─────────────────────────────────────────────
           _DashboardCard(
-            label: 'I Lost Something',
+            label: 'I am Looking For Something',
             borderColor: AppTheme.errorRed,
             textColor: AppTheme.errorRed,
             icon: Icons.search_rounded,
@@ -518,7 +518,7 @@ class _DashboardBody extends StatelessWidget {
           const SizedBox(height: 14),
 
           _DashboardCard(
-            label: 'I Found Something',
+            label: 'I Found/Lost Something',
             borderColor: AppTheme.accentGreen,
             textColor: AppTheme.accentGreen,
             icon: Icons.add_box_outlined,

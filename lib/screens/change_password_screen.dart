@@ -4,6 +4,7 @@ import 'package:lost_and_found/utils/app_theme.dart';
 import 'package:lost_and_found/utils/validators.dart';
 import 'package:lost_and_found/widgets/auth_text_field.dart';
 import 'package:lost_and_found/widgets/primary_button.dart';
+import 'package:lost_and_found/services/auth_service.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -45,19 +46,36 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    // TODO: Re-authenticate with current password, then:
-    //   await FirebaseAuth.instance.currentUser!.updatePassword(_newPasswordCtrl.text);
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password changed successfully!'),
-          backgroundColor: AppTheme.successGreen,
-          behavior: SnackBarBehavior.floating,
-        ),
+    try {
+      await AuthService().changePassword(
+        currentPassword: _currentPasswordCtrl.text,
+        newPassword: _newPasswordCtrl.text,
       );
-      Navigator.pop(context);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password changed successfully!'),
+            backgroundColor: AppTheme.successGreen,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: AppTheme.errorRed,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -131,8 +149,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     color: AppTheme.textGrey,
                     size: 20,
                   ),
-                  onPressed: () =>
-                      setState(() => _obscureNew = !_obscureNew),
+                  onPressed: () => setState(() => _obscureNew = !_obscureNew),
                 ),
                 validator: Validators.validatePassword,
               ),

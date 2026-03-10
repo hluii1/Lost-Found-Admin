@@ -1,3 +1,9 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:lost_and_found/models/item_model.dart';
+import 'package:lost_and_found/services/item_service.dart';
+import 'package:lost_and_found/services/storage_service.dart';
+import 'package:lost_and_found/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:lost_and_found/models/user_model.dart';
 import 'package:lost_and_found/utils/app_theme.dart';
@@ -15,6 +21,8 @@ class ReportItemScreen extends StatefulWidget {
 class _ReportItemScreenState extends State<ReportItemScreen> {
   bool _isFoundTab = true; // true = Found Items, false = Lost Items
 
+  File? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
   final _formKey = GlobalKey<FormState>();
   final _itemTitleCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
@@ -23,7 +31,7 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
 
   String _selectedCategory = 'All Category';
   String _selectedItemType = 'All Types';
-  String _selectedHandoverStatus = 'Status';
+  String _selectedHandoverStatus = 'Office Of Student Affairs';
 
   bool _isLoading = false;
 
@@ -37,32 +45,136 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   }
 
   Future<void> _uploadImage() async {
-    // TODO: implement image_picker
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Image upload — coming soon!')),
-    );
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 30, // Compress image slightly to save space
+        maxWidth: 600,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _selectedImage = File(pickedFile.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to pick image: $e')),
+      );
+    }
   }
 
+  // Replace your existing _submit method with this:
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-
-    // TODO: Upload images to Firebase Storage, create Firestore doc
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (mounted) {
+    if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isFoundTab
-                ? 'Found item reported successfully!'
-                : 'Lost item reported successfully!',
-          ),
-          backgroundColor: AppTheme.successGreen,
-          behavior: SnackBarBehavior.floating,
+        const SnackBar(
+          content: Text('Please fix the errors in the form'),
+          backgroundColor: AppTheme.errorRed,
         ),
       );
-      Navigator.pop(context);
+      return;
+    }
+
+    final currentUser = AuthService().currentFirebaseUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('You must be logged in to report an item.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      String? imageUrl;
+
+      // 1. Upload Image to Firebase Storage (if selected)
+      if (_selectedImage != null) {
+        print('🖼️ Uploading item image to Storage...');
+        try {
+          imageUrl = await StorageService().uploadImage(
+            _selectedImage!,
+            'item_images/${currentUser.uid}',
+          );
+          print('✅ Image uploaded. URL: $imageUrl');
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to upload image: $e'),
+                backgroundColor: AppTheme.errorRed,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // 2. Create ItemModel
+      final item = ItemModel(
+        id: '', // Firestore will generate ID
+        title: _itemTitleCtrl.text.trim(),
+        description: _descriptionCtrl.text.trim(),
+        category: _selectedCategory,
+        type: _isFoundTab ? 'found' : 'lost',
+        location: _locationCtrl.text.trim(),
+        date: _dateCtrl.text.trim(),
+        imageUrl: imageUrl ?? '',
+        reporterUid: currentUser.uid,
+        reporterName: AuthService().currentUser?.fullName ?? 'Unknown',
+        status: 'active',
+        handoverStatus: _isFoundTab ? _selectedHandoverStatus : null,
+        itemType: _selectedItemType,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      // 3. Save Item details using ItemService
+      print('💾 Saving item to Firestore...');
+      await ItemService().createItem(item);
+      print('✅ Item saved successfully');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isFoundTab
+                  ? '✅ Found item reported successfully!'
+                  : '✅ Lost item reported successfully!',
+            ),
+            backgroundColor: AppTheme.successGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        
+        // Clear form
+        _itemTitleCtrl.clear();
+        _descriptionCtrl.clear();
+        _locationCtrl.clear();
+        _dateCtrl.clear();
+        setState(() => _selectedImage = null);
+        
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) Navigator.pop(context);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error submitting report: $e'),
+            backgroundColor: AppTheme.errorRed,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -127,6 +239,7 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
           ),
 
           // ── Tab buttons ────────────────────────────────────────────
+          // ── Tab buttons ────────────────────────────────────────────
           Container(
             color: AppTheme.primaryBlue,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -139,6 +252,13 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                     onTap: () => setState(() {
                       _isFoundTab = true;
                       _formKey.currentState?.reset();
+
+                      // Clear all inputs and the image when switching to Found
+                      _itemTitleCtrl.clear();
+                      _descriptionCtrl.clear();
+                      _locationCtrl.clear();
+                      _dateCtrl.clear();
+                      _selectedImage = null;
                     }),
                   ),
                 ),
@@ -150,6 +270,13 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                     onTap: () => setState(() {
                       _isFoundTab = false;
                       _formKey.currentState?.reset();
+
+                      // Clear all inputs and the image when switching to Lost
+                      _itemTitleCtrl.clear();
+                      _descriptionCtrl.clear();
+                      _locationCtrl.clear();
+                      _dateCtrl.clear();
+                      _selectedImage = null;
                     }),
                   ),
                 ),
@@ -244,8 +371,8 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                                         : 'Upload clear images of lost item. You can upload multiple images.',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: AppTheme.primaryBlue
-                                          .withOpacity(0.9),
+                                      color:
+                                          AppTheme.primaryBlue.withOpacity(0.9),
                                     ),
                                   ),
                                 ),
@@ -262,8 +389,7 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                                 color: AppTheme.bgLight,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AppTheme.borderColor
-                                      .withOpacity(0.4),
+                                  color: AppTheme.borderColor.withOpacity(0.4),
                                   style: BorderStyle.solid,
                                   width: 1.5,
                                 ),
@@ -273,16 +399,16 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(Icons.cloud_upload_outlined,
-                                        color: AppTheme.textGrey
-                                            .withOpacity(0.6),
+                                        color:
+                                            AppTheme.textGrey.withOpacity(0.6),
                                         size: 36),
                                     const SizedBox(height: 6),
                                     Text(
                                       '[Upload]',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: AppTheme.textGrey
-                                            .withOpacity(0.7),
+                                        color:
+                                            AppTheme.textGrey.withOpacity(0.7),
                                       ),
                                     ),
                                   ],
@@ -290,11 +416,44 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                               ),
                             ),
                           ),
+
+                          if (_selectedImage != null) ...[
+                            const SizedBox(height: 12),
+                            Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    _selectedImage!,
+                                    height: 150,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _selectedImage = null),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close,
+                                          color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
-
                     // Item Information section
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -394,9 +553,7 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: _buildField(
-                                  _isFoundTab
-                                      ? 'Date found:'
-                                      : 'Date lost:',
+                                  _isFoundTab ? 'Date found:' : 'Date lost:',
                                   _dateCtrl,
                                   '[mm/dd/yyyy]',
                                 ),
@@ -411,13 +568,10 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                               'Handover Status:',
                               _selectedHandoverStatus,
                               [
-                                'Status',
-                                'Admin Office',
-                                'Security Office',
-                                'Faculty Room'
+                                'Office Of Student Affairs',
                               ],
-                              (v) => setState(
-                                  () => _selectedHandoverStatus = v!),
+                              (v) =>
+                                  setState(() => _selectedHandoverStatus = v!),
                             ),
                           ],
                         ],
@@ -483,7 +637,19 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
               borderSide: const BorderSide(color: AppTheme.primaryBlue),
             ),
           ),
-          validator: (v) => Validators.validateRequired(v, fieldName: label),
+          validator: (v) {
+            // Use specific validators based on field label
+            if (label == 'Item Title') {
+              return Validators.validateItemTitle(v);
+            } else if (label == 'Description') {
+              return Validators.validateItemDescription(v);
+            } else if (label.contains('at:')) {
+              return Validators.validateItemLocation(v);
+            } else if (label == 'Date') {
+              return Validators.validateItemDate(v);
+            }
+            return Validators.validateRequired(v, fieldName: label);
+          },
         ),
       ],
     );

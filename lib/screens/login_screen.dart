@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lost_and_found/services/auth_service.dart';
 import 'package:lost_and_found/utils/app_routes.dart';
 import 'package:lost_and_found/utils/app_theme.dart';
@@ -17,12 +18,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey        = GlobalKey<FormState>();
-  final _emailCtrl      = TextEditingController();
-  final _passwordCtrl   = TextEditingController();
-  final _authService    = AuthService();
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _authService = AuthService();
 
-  bool _isLoading       = false;
+  bool _isLoading = false;
   bool _obscurePassword = true;
 
   @override
@@ -51,8 +52,15 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on AuthException catch (e) {
+      // Known auth error (student number not found, wrong password, etc.)
       _showError(e.message);
-    } catch (_) {
+    } on FirebaseAuthException catch (e) {
+      // Firebase-specific error
+      _showError(e.message ?? 'Authentication failed.');
+    } catch (e, stack) {
+      // Log unexpected error for debugging
+      debugPrint('Login error: $e');
+      debugPrint('$stack');
       _showError('An unexpected error occurred. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -82,7 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
 
   // ── Build ─────────────────────────────────────────────────────────────
 

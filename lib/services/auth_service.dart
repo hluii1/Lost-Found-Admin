@@ -1,18 +1,11 @@
 // services/auth_service.dart
 //
-// Handles Firebase Authentication only.
-// No Firestore / database calls.
-//
-// To activate Firebase:
-//   1. Run: flutterfire configure
-//   2. Uncomment the firebase_auth imports and real implementations below.
-//   3. Comment out / remove the stub section.
+// Handles Firebase Authentication and Firestore user data.
 
+import 'package:flutter/material.dart';
 import 'package:lost_and_found/models/user_model.dart';
-
-// ── Uncomment after flutterfire configure ────────────────────────────────
-// import 'package:firebase_auth/firebase_auth.dart';
-// ─────────────────────────────────────────────────────────────────────────
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   // Singleton
@@ -20,14 +13,14 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._();
 
-  // ── Uncomment after flutterfire configure ──────────────────────────────
-  // final FirebaseAuth _auth = FirebaseAuth.instance;
-  // ─────────────────────────────────────────────────────────────────────--
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // In-memory current user (replaced by FirebaseAuth.currentUser in production)
+  // Current user from Firebase Auth
+  User? get currentFirebaseUser => _auth.currentUser;
   UserModel? _currentUser;
   UserModel? get currentUser => _currentUser;
-  bool get isLoggedIn => _currentUser != null;
+  bool get isLoggedIn => currentFirebaseUser != null;
 
   // ══════════════════════════════════════════════════════════════════════
   // LOGIN
@@ -39,61 +32,96 @@ class AuthService {
     required String emailOrStudentNumber,
     required String password,
   }) async {
-    // ── REAL Firebase implementation ──────────────────────────────────
-    // try {
-    //   // If user typed a student number, resolve it to the stored email first.
-    //   // (You would look this up from Firestore or a Cloud Function.)
-    //   final email = emailOrStudentNumber.contains('@')
-    //       ? emailOrStudentNumber
-    //       : await _resolveStudentNumberToEmail(emailOrStudentNumber);
-    //
-    //   final credential = await _auth.signInWithEmailAndPassword(
-    //     email: email,
-    //     password: password,
-    //   );
-    //
-    //   final fbUser = credential.user!;
-    //   _currentUser = UserModel(
-    //     uid:           fbUser.uid,
-    //     surname:       '',            // fetch from Firestore if needed
-    //     firstName:     fbUser.displayName ?? '',
-    //     studentNumber: '',            // fetch from Firestore if needed
-    //     ncstEmail:     fbUser.email ?? '',
-    //   );
-    //   return _currentUser!;
-    // } on FirebaseAuthException catch (e) {
-    //   throw AuthException(_mapFirebaseError(e.code));
-    // }
-    // ─────────────────────────────────────────────────────────────────
+    late String email;
 
-    // ── STUB (remove when Firebase is active) ─────────────────────────
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (emailOrStudentNumber.trim().isEmpty || password.isEmpty) {
-      throw const AuthException('Email/student number and password are required.');
-    }
-    if (password.length < 6) {
-      throw const AuthException('Incorrect email or password.');
+    if (emailOrStudentNumber.contains('@')) {
+      // It's an email
+      email = emailOrStudentNumber;
+    } else {
+      // It's a student number, query Firestore to get the email
+      try {
+        final docSnapshot = await _firestore
+            .collection('userMappings')
+            .doc(emailOrStudentNumber)
+            .get();
+        if (!docSnapshot.exists) {
+          throw const AuthException('Student number not found.');
+        }
+        final data = docSnapshot.data();
+        email = data?['ncstEmail'] ?? '';
+        if (email.isEmpty) {
+          throw const AuthException(
+              'User data incomplete. Please contact support.');
+        }
+      } on FirebaseException catch (e) {
+        throw AuthException(
+            'Failed to find user: ${e.message ?? 'unknown error'}');
+      }
     }
 
-    _currentUser = UserModel(
-      uid:           'stub-uid-001',
-      surname:       'Dela Cruz',
-      firstName:     'Juan',
-      studentNumber: '2021-00001',
-      ncstEmail:     emailOrStudentNumber.contains('@')
-          ? emailOrStudentNumber.trim()
-          : '2021-00001@ncst.edu.ph',
-    );
-    return _currentUser!;
-    // ─────────────────────────────────────────────────────────────────
+    // authenticate user
+    late UserCredential credential;
+    try {
+      credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_mapFirebaseError(e.code));
+    }
+
+    // fetch profile from Firestore
+    try {
+      final userDoc =
+          await _firestore.collection('users').doc(credential.user!.uid).get();
+      if (!userDoc.exists) {
+        throw const AuthException(
+            'User data not found. Please contact support.');
+      }
+      final data = userDoc.data()!;
+      _currentUser = UserModel(
+        uid: credential.user!.uid,
+        surname: data['surname'] ?? '',
+        firstName: data['firstName'] ?? '',
+        studentNumber: data['studentNumber'] ?? '',
+        ncstEmail: data['ncstEmail'] ?? '',
+        photoUrl: data['photoUrl'] ?? '',
+      );
+
+      // Ensure user mapping exists (for existing users who login with email)
+      final studentNum = data['studentNumber'] ?? '';
+      final userEmail = data['ncstEmail'] ?? '';
+      if (studentNum.isNotEmpty && userEmail.isNotEmpty) {
+        try {
+          final mappingDoc =
+              await _firestore.collection('userMappings').doc(studentNum).get();
+          if (!mappingDoc.exists) {
+            // Create mapping for existing user
+            await _firestore.collection('userMappings').doc(studentNum).set({
+              'ncstEmail': userEmail,
+            });
+          }
+        } catch (e) {
+          // Don't fail login if mapping creation fails
+          debugPrint('Warning: Could not create user mapping: $e');
+        }
+      }
+
+      return _currentUser!;
+    } on FirebaseException catch (e) {
+      // permission denied / network / etc.
+      throw AuthException(
+          'Failed to load user profile: ${e.message ?? 'unknown error'}');
+    } catch (e) {
+      throw AuthException('Unexpected login error: $e');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
   // REGISTER
   // ══════════════════════════════════════════════════════════════════════
 
-  /// Create a new Firebase Auth account and return a [UserModel].
+  /// Create a new Firebase Auth account and save user data to Firestore.
   Future<UserModel> register({
     required String surname,
     required String firstName,
@@ -101,40 +129,82 @@ class AuthService {
     required String ncstEmail,
     required String password,
   }) async {
-    // ── REAL Firebase implementation ──────────────────────────────────
-    // try {
-    //   final credential = await _auth.createUserWithEmailAndPassword(
-    //     email: ncstEmail,
-    //     password: password,
-    //   );
-    //
-    //   await credential.user!.updateDisplayName('$firstName $surname');
-    //
-    //   _currentUser = UserModel(
-    //     uid:           credential.user!.uid,
-    //     surname:       surname,
-    //     firstName:     firstName,
-    //     studentNumber: studentNumber,
-    //     ncstEmail:     ncstEmail,
-    //   );
-    //   return _currentUser!;
-    // } on FirebaseAuthException catch (e) {
-    //   throw AuthException(_mapFirebaseError(e.code));
-    // }
-    // ─────────────────────────────────────────────────────────────────
+    try {
+      // Check Firebase is initialized
+      if (FirebaseAuth.instance == null) {
+        throw Exception('Firebase not initialized');
+      }
 
-    // ── STUB (remove when Firebase is active) ─────────────────────────
-    await Future.delayed(const Duration(milliseconds: 800));
+      // Step 1: Create Firebase Auth account
+      print('📝 Step 1: Creating Firebase Auth account...');
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: ncstEmail,
+        password: password,
+      );
+      final userId = credential.user!.uid;
+      print('✅ Step 1 Success: User created with UID: $userId');
 
-    _currentUser = UserModel(
-      uid:           'stub-uid-new',
-      surname:       surname,
-      firstName:     firstName,
-      studentNumber: studentNumber,
-      ncstEmail:     ncstEmail,
-    );
-    return _currentUser!;
-    // ─────────────────────────────────────────────────────────────────
+      // Step 2: Update display name (optional, don't fail if this errors)
+      print('📝 Step 2: Updating display name...');
+      try {
+        await credential.user!.updateDisplayName('$firstName $surname');
+        print('✅ Step 2 Success: Display name updated');
+      } catch (e) {
+        print('⚠️  Step 2 Warning (non-critical): $e');
+      }
+
+      // Step 3: Save user data to Firestore
+      print('📝 Step 3: Saving user data to Firestore...');
+      try {
+        await _firestore.collection('users').doc(userId).set({
+          'surname': surname,
+          'firstName': firstName,
+          'studentNumber': studentNumber,
+          'ncstEmail': ncstEmail,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        // Create public mapping for login/password reset
+        await _firestore.collection('userMappings').doc(studentNumber).set({
+          'ncstEmail': ncstEmail,
+        });
+
+        print('✅ Step 3 Success: User data and mapping saved to Firestore');
+      } catch (e) {
+        print('❌ Step 3 Failed: $e');
+        // If Firestore save fails, delete the Auth user to keep them in sync
+        print('📝 Rolling back: Deleting Firebase Auth user...');
+        await credential.user!.delete();
+        print('✅ Rollback complete: Auth user deleted');
+
+        throw AuthException(
+            'Could not save user data to database. Check internet and try again. Error: $e');
+      }
+
+      // Step 4: Cache user in memory
+      print('📝 Step 4: Caching user in memory...');
+      _currentUser = UserModel(
+        uid: userId,
+        surname: surname,
+        firstName: firstName,
+        studentNumber: studentNumber,
+        ncstEmail: ncstEmail,
+        photoUrl: '', // Initialize with empty string
+      );
+      print('✅ Step 4 Success: User cached and registration complete!');
+      return _currentUser!;
+    } on FirebaseAuthException catch (e) {
+      print('❌ Firebase Auth Error: ${e.code} - ${e.message}');
+      throw AuthException(_mapFirebaseError(e.code));
+    } on AuthException catch (e) {
+      print('❌ Auth Exception: ${e.message}');
+      rethrow;
+    } catch (e, stack) {
+      print('❌ Unexpected Error: $e');
+      print('📋 Stack Trace: $stack');
+      throw AuthException('Registration failed: ${e.toString()}');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -142,20 +212,77 @@ class AuthService {
   // ══════════════════════════════════════════════════════════════════════
 
   Future<void> signOut() async {
-    // await _auth.signOut();          // uncomment for Firebase
-    await Future.delayed(const Duration(milliseconds: 300));
+    await _auth.signOut();
     _currentUser = null;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // CHANGE PASSWORD
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Change the current user's password.
+  /// Requires re-authentication with current password for security.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (currentFirebaseUser == null) {
+      throw const AuthException('No user logged in.');
+    }
+
+    try {
+      // Re-authenticate with current password
+      final credential = EmailAuthProvider.credential(
+        email: currentFirebaseUser!.email!,
+        password: currentPassword,
+      );
+      await currentFirebaseUser!.reauthenticateWithCredential(credential);
+
+      // Update to new password
+      await currentFirebaseUser!.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_mapFirebaseError(e.code));
+    } catch (e) {
+      throw AuthException('Failed to change password: $e');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
   // FORGOT PASSWORD
   // ══════════════════════════════════════════════════════════════════════
 
-  Future<void> sendPasswordReset(String email) async {
-    // await _auth.sendPasswordResetEmail(email: email);  // uncomment for Firebase
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (email.trim().isEmpty) {
-      throw const AuthException('Please enter your email address.');
+  Future<void> sendPasswordReset(String emailOrStudentNumber) async {
+    late String email;
+
+    if (emailOrStudentNumber.contains('@')) {
+      // It's an email
+      email = emailOrStudentNumber;
+    } else {
+      // It's a student number, query Firestore to get the email
+      try {
+        final docSnapshot = await _firestore
+            .collection('userMappings')
+            .doc(emailOrStudentNumber)
+            .get();
+        if (!docSnapshot.exists) {
+          throw const AuthException('Student number not found.');
+        }
+        final data = docSnapshot.data();
+        email = data?['ncstEmail'] ?? '';
+        if (email.isEmpty) {
+          throw const AuthException(
+              'User data incomplete. Please contact support.');
+        }
+      } on FirebaseException catch (e) {
+        throw AuthException(
+            'Failed to find user: ${e.message ?? 'unknown error'}');
+      }
+    }
+
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_mapFirebaseError(e.code));
     }
   }
 
@@ -163,31 +290,65 @@ class AuthService {
   // HELPERS
   // ══════════════════════════════════════════════════════════════════════
 
-  // Maps Firebase error codes to user-friendly messages.
-  // String _mapFirebaseError(String code) {
-  //   switch (code) {
-  //     case 'user-not-found':
-  //     case 'wrong-password':
-  //       return 'Incorrect email or password.';
-  //     case 'email-already-in-use':
-  //       return 'This email is already registered.';
-  //     case 'weak-password':
-  //       return 'Password is too weak. Use at least 8 characters.';
-  //     case 'invalid-email':
-  //       return 'Invalid email address.';
-  //     case 'too-many-requests':
-  //       return 'Too many attempts. Please try again later.';
-  //     case 'network-request-failed':
-  //       return 'No internet connection.';
-  //     default:
-  //       return 'An error occurred. Please try again.';
-  //   }
-  // }
-}
+  /// Maps Firebase error codes to user-friendly messages.
+  String _mapFirebaseError(String code) {
+    switch (code) {
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'Incorrect email or password.';
+      case 'email-already-in-use':
+        return 'This email is already registered.';
+      case 'weak-password':
+        return 'Password is too weak. Use at least 6 characters.';
+      case 'invalid-email':
+        return 'Invalid email address.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'No internet connection.';
+      default:
+        return 'An error occurred. Please try again.';
+    }
+  }
 
-// ══════════════════════════════════════════════════════════════════════════
-// AUTH EXCEPTION
-// ══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════
+  // UPDATE CACHED USER
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Update the cached current user with new data
+  /// Use this after profile photo or other user data changes
+  void updateCachedUser(UserModel updatedUser) {
+    _currentUser = updatedUser;
+    print('✅ Cached user updated: ${updatedUser.fullName}');
+  }
+
+  /// Refresh current user from Firestore
+  /// Fetches latest data and updates _currentUser
+  Future<UserModel?> refreshCurrentUser() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return null;
+
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      if (!userDoc.exists) return null;
+
+      final data = userDoc.data()!;
+      _currentUser = UserModel(
+        uid: uid,
+        surname: data['surname'] ?? '',
+        firstName: data['firstName'] ?? '',
+        studentNumber: data['studentNumber'] ?? '',
+        ncstEmail: data['ncstEmail'] ?? '',
+        photoUrl: data['photoUrl'] ?? '',
+      );
+      print('✅ User refreshed from Firestore: ${_currentUser?.fullName}');
+      return _currentUser;
+    } catch (e) {
+      print('❌ Error refreshing user: $e');
+      return null;
+    }
+  }
+}
 
 class AuthException implements Exception {
   final String message;

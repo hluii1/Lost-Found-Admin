@@ -15,11 +15,11 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _formKey    = GlobalKey<FormState>();
-  final _emailCtrl  = TextEditingController();
-  final _auth       = AuthService();
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _auth = AuthService();
 
-  bool _isLoading   = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -93,7 +93,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  "We'll email you a verification code  you can use  to reset your password.",
+                  "We'll email you a verification code you can use to reset your password.",
                   style: TextStyle(
                     fontSize: 14,
                     color: AppTheme.textGrey,
@@ -105,11 +105,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 // ── Email field ───────────────────────────────────────────
                 AuthTextField(
                   controller: _emailCtrl,
-                  label: 'NCST Email Account',
-                  hintText: 'student@ncst.edu.ph',
+                  label: 'NCST Email Account / Student Number',
+                  hintText: 'student@ncst.edu.ph or 2021-00001',
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
-                  validator: Validators.validateEmail,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'This field is required';
+                    }
+                    // Allow either email format or student number format
+                    if (!value.contains('@') &&
+                        !RegExp(r'^\d{4}-\d{5}$').hasMatch(value)) {
+                      return 'Enter a valid email or student number (e.g. 2021-00001)';
+                    }
+                    if (value.contains('@')) {
+                      final emailError = Validators.validateEmail(value);
+                      if (emailError != null) return emailError;
+                    }
+                    return null;
+                  },
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _sendCode(),
                 ),
@@ -117,8 +131,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                 // ── Back to login link ────────────────────────────────────
                 GestureDetector(
-                  onTap: () => Navigator.pushReplacementNamed(
-                      context, AppRoutes.login),
+                  onTap: () =>
+                      Navigator.pushReplacementNamed(context, AppRoutes.login),
                   child: const Text(
                     'Back to Login',
                     style: TextStyle(
