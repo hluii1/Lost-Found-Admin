@@ -358,11 +358,44 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
                               ),
                             ),
                           ),
+
+                          if (_selectedImage != null) ...[
+                            const SizedBox(height: 12),
+                            Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    _selectedImage!,
+                                    height: 150,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        setState(() => _selectedImage = null),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close,
+                                          color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
-
                     // Item Information section
                     Container(
                       padding: const EdgeInsets.all(12),
