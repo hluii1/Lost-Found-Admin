@@ -52,8 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.errorRed),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed),
             child: const Text('Logout'),
           ),
         ],
@@ -71,19 +70,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _onSidebarTap(_SidebarItem item) {
     Navigator.pop(context); // close drawer
     setState(() => _activeItem = item);
-    
+
     switch (item) {
       case _SidebarItem.search:
-        Navigator.pushNamed(context, AppRoutes.searchBrowse, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.searchBrowse,
+            arguments: widget.user);
         break;
       case _SidebarItem.report:
-        Navigator.pushNamed(context, AppRoutes.reportItem, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.reportItem,
+            arguments: widget.user);
         break;
       case _SidebarItem.trackMyReport:
-        Navigator.pushNamed(context, AppRoutes.trackMyReport, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.trackMyReport,
+            arguments: widget.user);
         break;
       case _SidebarItem.helpSupport:
-        Navigator.pushNamed(context, AppRoutes.helpSupport, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.helpSupport,
+            arguments: widget.user);
         break;
       default:
         // Dashboard stays on dashboard
@@ -93,16 +96,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onDashboardCardTap(_SidebarItem item) {
     setState(() => _activeItem = item);
-    
+
     switch (item) {
       case _SidebarItem.search:
-        Navigator.pushNamed(context, AppRoutes.searchBrowse, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.searchBrowse,
+            arguments: widget.user);
         break;
       case _SidebarItem.report:
-        Navigator.pushNamed(context, AppRoutes.reportItem, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.reportItem,
+            arguments: widget.user);
         break;
       case _SidebarItem.trackMyReport:
-        Navigator.pushNamed(context, AppRoutes.trackMyReport, arguments: widget.user);
+        Navigator.pushNamed(context, AppRoutes.trackMyReport,
+            arguments: widget.user);
         break;
       default:
         break;
@@ -208,7 +214,14 @@ class _DashboardAppBar extends StatelessWidget implements PreferredSizeWidget {
 // SIDEBAR DRAWER
 // ════════════════════════════════════════════════════════════════════════════
 
-enum _SidebarItem { dashboard, search, report, trackMyReport, helpSupport }
+enum _SidebarItem {
+  dashboard,
+  search,
+  report,
+  trackMyReport,
+  helpSupport,
+  adminLogs
+}
 
 class _Sidebar extends StatelessWidget {
   final UserModel? user;
@@ -232,8 +245,7 @@ class _Sidebar extends StatelessWidget {
           children: [
             // ── Header ─────────────────────────────────────────────────
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
               child: Row(
                 children: [
                   Image.asset(
@@ -295,6 +307,17 @@ class _Sidebar extends StatelessWidget {
               onTap: () => onItemTap(_SidebarItem.helpSupport),
             ),
 
+            if (user?.isAdmin ?? false) ...[
+              const Divider(color: Colors.white24, height: 20),
+              _SidebarTile(
+                icon: Icons.receipt_long_rounded,
+                label: 'Transaction Logs',
+                isActive: activeItem == _SidebarItem.adminLogs,
+                onTap: () => onItemTap(_SidebarItem.adminLogs),
+                subtitle: 'Admin: Proof of Receipt',
+              ),
+            ],
+
             const Spacer(),
             const Divider(color: Colors.white24, height: 1),
 
@@ -342,16 +365,13 @@ class _SidebarTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
-        color: isActive
-            ? Colors.white.withOpacity(0.18)
-            : Colors.transparent,
+        color: isActive ? Colors.white.withOpacity(0.18) : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
                 Icon(icon, color: color, size: 22),
@@ -365,9 +385,8 @@ class _SidebarTile extends StatelessWidget {
                         label,
                         style: TextStyle(
                           color: color,
-                          fontWeight: isActive
-                              ? FontWeight.bold
-                              : FontWeight.w500,
+                          fontWeight:
+                              isActive ? FontWeight.bold : FontWeight.w500,
                           fontSize: 15,
                         ),
                       ),
@@ -443,7 +462,8 @@ class _DashboardBody extends StatelessWidget {
                 style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
                 decoration: InputDecoration(
                   hintText: 'What are you looking for?',
-                  hintStyle: const TextStyle(color: AppTheme.textGrey, fontSize: 14),
+                  hintStyle:
+                      const TextStyle(color: AppTheme.textGrey, fontSize: 14),
                   prefixIcon: const Icon(Icons.search_rounded,
                       color: AppTheme.primaryBlue, size: 22),
                   filled: true,
@@ -549,8 +569,7 @@ class _DashboardCard extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borderColor, width: 2),
