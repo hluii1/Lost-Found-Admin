@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart'; //  Added for Firestore
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:lost_and_found/models/user_model.dart';
 import 'package:lost_and_found/services/auth_service.dart';
@@ -27,7 +27,14 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
   @override
   void initState() {
     super.initState();
-    // Rebuild the screen whenever the user types in the search bar
+
+    // 1. Refresh the user immediately when screen opens
+    AuthService().refreshCurrentUser().then((_) {
+      if (mounted) {
+        setState(() {}); // This re-builds the screen once the User ID is found
+      }
+    });
+
     _searchCtrl.addListener(() {
       setState(() {});
     });
@@ -69,7 +76,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
       ),
       body: Column(
         children: [
-          // ── Search header ──────────────────────────────────────────
           Container(
             color: AppTheme.white,
             padding: const EdgeInsets.all(16),
@@ -108,7 +114,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ],
                       ),
                     ),
-                    // Active filters badge
                     if (_startDate != null ||
                         _endDate != null ||
                         _selectedCategory != 'All Category' ||
@@ -123,7 +128,7 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                           border: Border.all(
                               color: AppTheme.errorRed.withOpacity(0.3)),
                         ),
-                        child: Text(
+                        child: const Text(
                           'Filters Active',
                           style: TextStyle(
                             fontSize: 10,
@@ -135,13 +140,10 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-
-                // ── Filter row ─────────────────────────────────────────
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      // Search field
                       SizedBox(
                         width: 140,
                         height: 42,
@@ -176,8 +178,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-
-                      // Category dropdown
                       SizedBox(
                         width: 130,
                         height: 42,
@@ -209,12 +209,13 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-
-                      // Item Type dropdown
-                      SizedBox(
-                        width: 110,
+                      // FIXED: Removed SizedBox(width: 110) to prevent red text overflow
+                      Container(
                         height: 42,
+                        width:
+                            125, // Increased width slightly to fit "Claimable"
                         child: DropdownButtonFormField<String>(
+                          isExpanded: true, // Prevents overflow red lines
                           value: _selectedItemType,
                           decoration: InputDecoration(
                             contentPadding: const EdgeInsets.symmetric(
@@ -225,7 +226,14 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                           ),
                           style: const TextStyle(
                               fontSize: 12, color: AppTheme.textDark),
-                          items: ['All Types', 'Lost', 'Found']
+                          // ADDED: Requested and Claimable options
+                          items: [
+                            'All Types',
+                            'Lost',
+                            'Found',
+                            'Requested',
+                            'Claimable'
+                          ]
                               .map((t) => DropdownMenuItem(
                                   value: t,
                                   child:
@@ -236,8 +244,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-
-                      // From Date picker
                       SizedBox(
                         width: 100,
                         height: 42,
@@ -250,11 +256,12 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                               lastDate: DateTime.now(),
                             );
                             if (picked != null) {
-                              // Validate: start date should not be after end date
-                              if (_endDate != null && picked.isAfter(_endDate!)) {
+                              if (_endDate != null &&
+                                  picked.isAfter(_endDate!)) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Start date cannot be after end date'),
+                                    content: Text(
+                                        'Start date cannot be after end date'),
                                     backgroundColor: AppTheme.errorRed,
                                     duration: Duration(seconds: 2),
                                   ),
@@ -287,8 +294,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-
-                      // To Date picker
                       SizedBox(
                         width: 100,
                         height: 42,
@@ -301,11 +306,12 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                               lastDate: DateTime.now(),
                             );
                             if (picked != null) {
-                              // Validate: end date should not be before start date
-                              if (_startDate != null && picked.isBefore(_startDate!)) {
+                              if (_startDate != null &&
+                                  picked.isBefore(_startDate!)) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('End date cannot be before start date'),
+                                    content: Text(
+                                        'End date cannot be before start date'),
                                     backgroundColor: AppTheme.errorRed,
                                     duration: Duration(seconds: 2),
                                   ),
@@ -338,8 +344,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-
-                      // Clear Filters button
                       SizedBox(
                         height: 42,
                         child: TextButton(
@@ -394,8 +398,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
               ],
             ),
           ),
-
-          // ── Results list from FIRESTORE ────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -403,21 +405,15 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
-                // 1. Show loading spinner while fetching
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-
-                // 2. Error handling
                 if (snapshot.hasError) {
                   return Center(
                     child: Text('Error loading items: ${snapshot.error}'),
                   );
                 }
-
                 final docs = snapshot.data?.docs ?? [];
-
-                // 3. Map Firestore data to _ItemCard format
                 List<_ItemCard> allItems = docs.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   return _ItemCard(
@@ -430,14 +426,14 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                     dateFound: data['date'] ?? 'Unknown date',
                     reportedBy: data['reporterName'] ?? 'Student',
                     reporterUid: data['reporterUid'] ?? '',
-                    status: data['type'] == 'found' ? 'Found' : 'Lost',
-                    imageUrl: data['imageUrl'], // Storage URL, not base64
+                    status: data['status'] ??
+                        (data['type'] == 'found' ? 'Found' : 'Lost'),
+                    imageUrl: data['imageUrl'],
+                    claimerUid: data['claimerUid'],
                   );
                 }).toList();
 
-                // 4. Apply search and dropdown filters
                 List<_ItemCard> filteredItems = allItems.where((item) {
-                  // Search filter
                   final searchText = _searchCtrl.text.toLowerCase();
                   if (searchText.isNotEmpty &&
                       !item.title.toLowerCase().contains(searchText) &&
@@ -445,66 +441,57 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                       !item.location.toLowerCase().contains(searchText)) {
                     return false;
                   }
-
-                  // Category filter
                   if (_selectedCategory != 'All Category' &&
                       item.category != _selectedCategory) {
                     return false;
                   }
 
-                  // Item Type filter
-                  if (_selectedItemType != 'All Types' &&
-                      item.itemType != _selectedItemType) {
-                    return false;
-                  }
-
-                  // Date filter - Only include items within the selected date range
-                  if (_startDate != null || _endDate != null) {
-                    try {
-                      // Parse item date with robust error handling
-                      final itemDate = DateFormat('MM/dd/yyyy').parse(item.dateFound);
-                      
-                      // Include item only if it falls within BOTH start and end dates
-                      // Start date check: item must be on or after start date (if set)
-                      if (_startDate != null) {
-                        if (itemDate.isBefore(_startDate!)) {
-                          print('❌ Item ${ item.title} (${item.dateFound}) is BEFORE start date ${DateFormat('MM/dd/yyyy').format(_startDate!)}');
-                          return false; // Exclude: item is before start date
-                        }
-                      }
-                      
-                      // End date check: item must be on or before end date (if set)
-                      // Add 1 day to end date to include the entire end day (up to 23:59:59)
-                      if (_endDate != null) {
-                        final endOfDay = _endDate!.add(const Duration(days: 1));
-                        if (itemDate.isAfter(endOfDay)) {
-                          print('❌ Item ${item.title} (${item.dateFound}) is AFTER end date ${DateFormat('MM/dd/yyyy').format(_endDate!)}');
-                          return false; // Exclude: item is after end date
-                        }
-                      }
-                      
-                      // Item passed all date range checks - include it
-                      print('✅ Item ${item.title} (${item.dateFound}) is WITHIN date range');
-                    } catch (e) {
-                      // If date parsing fails, log and skip this item
-                      print('⚠️ Date parse error for item "${item.title}" with date "${item.dateFound}": $e');
-                      return false; // Exclude items with unparseable dates
+                  // UPDATED FILTER LOGIC
+                  if (_selectedItemType != 'All Types') {
+                    if (_selectedItemType == 'Lost' ||
+                        _selectedItemType == 'Found') {
+                      if (item.itemType != _selectedItemType) return false;
+                    } else {
+                      // Filters by status (Requested/Claimable)
+                      if (item.status != _selectedItemType) return false;
                     }
                   }
 
+                  if (_startDate != null || _endDate != null) {
+                    try {
+                      final itemDate =
+                          DateFormat('MM/dd/yyyy').parse(item.dateFound);
+                      if (_startDate != null && itemDate.isBefore(_startDate!))
+                        return false;
+                      if (_endDate != null) {
+                        final endOfDay = _endDate!.add(const Duration(days: 1));
+                        if (itemDate.isAfter(endOfDay)) return false;
+                      }
+                    } catch (e) {
+                      return false;
+                    }
+                  }
                   return true;
                 }).toList();
 
-                // 5. Display Empty State or List
                 if (filteredItems.isEmpty) {
                   return const _EmptySearchState();
                 }
-
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: filteredItems.length,
                   itemBuilder: (context, index) {
-                    return _ItemResultCard(item: filteredItems[index]);
+                    final item =
+                        filteredItems[index]; // Get the item for this row
+
+                    return _ItemResultCard(
+                      item: item,
+                      // Pass the functions from this State class down to the card
+                      onCommentPressed: (selectedItem) =>
+                          _showCommentBox(context, selectedItem),
+                      onActionPressed: (selectedItem) =>
+                          _handleAction(context, selectedItem),
+                    );
                   },
                 );
               },
@@ -514,20 +501,345 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
       ),
     );
   }
-}
 
-// ════════════════════════════════════════════════════════════════════════════
-// ITEM RESULT CARD
-// ════════════════════════════════════════════════════════════════════════════
+  void _showCommentBox(BuildContext context, _ItemCard item) {
+    final TextEditingController commentCtrl = TextEditingController();
+    final currentUser = AuthService().currentUser;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // HEADER
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 10, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Comments",
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+
+            // Comment List
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('item_comments')
+                    .where('itemId', isEqualTo: item.id)
+                    .where('status', isEqualTo: 'Comment')
+                    .orderBy('claimDate', descending: false)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final docs = snapshot.data!.docs;
+                  if (docs.isEmpty) {
+                    return const Center(child: Text("No comments yet."));
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(15),
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data() as Map<String, dynamic>;
+                      final String commentId = docs[index].id;
+                      final String commenterUid = data['claimerUid'] ?? '';
+                      final String commenterName =
+                          data['claimerName'] ?? 'Anonymous';
+
+                      // FIX: Use currentUser for both UID and Role check
+                      bool canDelete = (currentUser?.uid == commenterUid) ||
+                          (currentUser?.role == 'admin');
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: RichText(
+                                text: TextSpan(
+                                  style: const TextStyle(
+                                      color: Colors.black, fontSize: 14),
+                                  children: [
+                                    TextSpan(
+                                      text: "$commenterName: ",
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.primaryBlue),
+                                    ),
+                                    TextSpan(text: data['comment'] ?? ''),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (canDelete)
+                              GestureDetector(
+                                onTap: () => _deleteComment(context, commentId),
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.1),
+                                      shape: BoxShape.circle),
+                                  child: const Icon(Icons.close,
+                                      size: 14, color: Colors.red),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+
+            // INPUT AREA
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                left: 15,
+                right: 15,
+                top: 10,
+              ),
+              child: TextField(
+                controller: commentCtrl,
+                decoration: InputDecoration(
+                  hintText: "Write a message...",
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.send, color: AppTheme.primaryBlue),
+                    onPressed: () async {
+                      if (commentCtrl.text.trim().isNotEmpty) {
+                        await FirebaseFirestore.instance
+                            .collection('item_comments')
+                            .add({
+                          'itemId': item.id,
+                          'itemName': item.title,
+                          'claimerUid': currentUser?.uid,
+                          'claimerName': currentUser?.fullName ?? 'Anonymous',
+                          'comment': commentCtrl.text.trim(),
+                          'status': 'Comment',
+                          'claimDate': FieldValue.serverTimestamp(),
+                        });
+                        commentCtrl.clear();
+                      }
+                    },
+                  ),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteComment(BuildContext context, String docId) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Delete Comment"),
+          content: const Text("Are you sure you want to delete this message?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      // CHANGE 'transaction_logs' TO 'item_comments' BELOW
+      await FirebaseFirestore.instance
+          .collection('item_comments')
+          .doc(docId)
+          .delete();
+    }
+  }
+
+  void _handleAction(BuildContext context, _ItemCard item) {
+    if (item.status == 'Requested' || item.status == 'Claimable') {
+      _showRevertDialog(context, item); // Pass the item as the second argument
+    } else {
+      _showRequestDialog(context, item); // Pass the item as the second argument
+    }
+  }
+
+  void _showRequestDialog(BuildContext context, _ItemCard item) async {
+    final bool isFoundPost = item.itemType == 'Found';
+    final user = AuthService().currentUser;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isFoundPost ? 'Request Claim Item?' : 'Claim Found Item?'),
+        content: Text(isFoundPost
+            ? 'Are you sure you want to claim "${item.title}"?'
+            : 'Are you sure you want to claim the found?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryBlue),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+
+    // ONLY run the update if the user clicked "Yes"
+    if (confirmed == true) {
+      // 1. Get the current user and verify they are logged in
+      final currentUser = AuthService().currentUser;
+
+      // SAFETY CHECK: If the UID is missing, stop the process
+      if (currentUser == null || currentUser.uid.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Error: Could not verify your User ID. Please log in again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      try {
+        // 2. Update the Item document
+        await FirebaseFirestore.instance
+            .collection('items')
+            .doc(item.id)
+            .update({
+          'status': item.itemType == 'Found' ? 'Requested' : 'Claimable',
+          'claimerUid': currentUser.uid, // Guaranteed not to be empty now
+          'claimerName': currentUser.fullName ?? 'Anonymous',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        // 3. Add to the Transaction Logs for the Admin
+        await FirebaseFirestore.instance.collection('transaction_logs').add({
+          'itemId': item.id,
+          'itemName': item.title,
+          'itemCategory': item.category,
+          'itemDescription': item.description,
+          'itemLocation': item.location,
+          'itemOriginalImage': item.imageUrl,
+          'itemAuthorName': item.reportedBy,
+          'claimerUid': currentUser.uid, // Use the same verified UID
+          'claimerName': currentUser.fullName ?? 'Anonymous',
+          'status': 'Pending',
+          'claimDate': FieldValue.serverTimestamp(),
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Claim request submitted successfully!')),
+        );
+      } catch (e) {
+        debugPrint('Update failed: $e');
+      }
+    }
+  }
+
+  void _showRevertDialog(BuildContext context, _ItemCard item) async {
+    // ADD THIS LINE to define currentUser
+    final currentUser = AuthService().currentUser;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Action?'),
+        content: const Text(
+            'Cancel this request and remove it from Office of Student Affairs(OSA) claim request logs?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Now currentUser can be used safely if needed for logic here
+      await FirebaseFirestore.instance.collection('items').doc(item.id).update({
+        'status': item.itemType == 'Found' ? 'Found' : 'Lost',
+        'claimerUid': FieldValue.delete(),
+      });
+
+      var logQuery = await FirebaseFirestore.instance
+          .collection('transaction_logs')
+          .where('itemId', isEqualTo: item.id)
+          .get();
+
+      for (var doc in logQuery.docs) {
+        await doc.reference.delete();
+      }
+    }
+  }
+}
 
 class _ItemResultCard extends StatelessWidget {
   final _ItemCard item;
-  const _ItemResultCard({required this.item});
+  final Function(_ItemCard) onCommentPressed;
+  final Function(_ItemCard) onActionPressed; // 1. Define the callback
+
+  const _ItemResultCard({
+    required this.item,
+    required this.onCommentPressed,
+    required this.onActionPressed, // 2. Add to constructor
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isFound = item.status == 'Found';
-    final statusColor = isFound ? AppTheme.accentGreen : AppTheme.errorRed;
+    final currentUser = AuthService().currentUser;
+
+    final bool isFoundPost = item.itemType == 'Found';
+
+    // 1. This checks if YOU are the one who clicked claim
+    final bool isMyRequest =
+        (item.status == 'Requested' || item.status == 'Claimable') &&
+            (item.claimerUid == currentUser?.uid);
+
+    // 2. This checks if SOMEONE ELSE clicked claim
+    final bool isRequestedByOthers =
+        (item.status == 'Requested' || item.status == 'Claimable') &&
+            (item.claimerUid != currentUser?.uid);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -544,7 +856,7 @@ class _ItemResultCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── UPDATED IMAGE VIEWER ──
+                // Image Section
                 Container(
                   width: 90,
                   height: 90,
@@ -557,43 +869,16 @@ class _ItemResultCard extends StatelessWidget {
                       ? Image.network(
                           item.imageUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            print('❌ Error loading image: $error');
-                            return const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 30,
-                              ),
-                            );
-                          },
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return const Center(
-                              child: SizedBox(
-                                width: 30,
-                                height: 30,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                  child: Icon(Icons.broken_image_outlined,
+                                      color: Colors.white, size: 30)),
                         )
                       : const Center(
-                          child: Icon(
-                            Icons.image_not_supported_outlined,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
+                          child: Icon(Icons.image_not_supported_outlined,
+                              color: Colors.white, size: 30)),
                 ),
                 const SizedBox(width: 12),
-
-                // Item details
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -608,45 +893,73 @@ class _ItemResultCard extends StatelessWidget {
                                 Text(
                                   item.title,
                                   style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.textDark,
-                                  ),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.textDark),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   item.category,
                                   style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.textGrey.withOpacity(0.8),
-                                  ),
-                                ),
-                                Text(
-                                  item.itemType,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.textGrey.withOpacity(0.8),
-                                  ),
+                                      fontSize: 11,
+                                      color:
+                                          AppTheme.textGrey.withOpacity(0.8)),
                                 ),
                               ],
                             ),
                           ),
-                          // Status badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              item.status,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                          // BADGE AND COMMENT SECTION
+                          // BADGE AND COMMENT SECTION
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // REMOVED the 'if itemType == Lost' check so it shows for BOTH
+                                  // Location: around
+                                  IconButton(
+                                      icon: const Icon(Icons.comment_outlined,
+                                          size: 18,
+                                          color: AppTheme.primaryBlue),
+                                      onPressed: () => onCommentPressed(
+                                          item) // Pass the 'item' object here
+                                      ),
+                                  const SizedBox(
+                                      width:
+                                          8), // Now always gives spacing to the badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isFoundPost
+                                          ? AppTheme.accentGreen
+                                          : AppTheme.errorRed,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      item.itemType,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              // ... [Processing Badges logic stays the same below this]
+                              // Processing Badges (Requested/Claimable)
+                              if (item.status == 'Claimable') ...[
+                                const SizedBox(height: 4),
+                                _StatusBadge(
+                                    text: 'Claimable', color: Colors.blue),
+                              ],
+                              if (item.status == 'Requested') ...[
+                                const SizedBox(height: 4),
+                                _StatusBadge(
+                                    text: 'Requested', color: Colors.orange),
+                              ],
+                            ],
                           ),
                         ],
                       ),
@@ -654,9 +967,8 @@ class _ItemResultCard extends StatelessWidget {
                       Text(
                         item.description,
                         style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textGrey.withOpacity(0.9),
-                        ),
+                            fontSize: 12,
+                            color: AppTheme.textGrey.withOpacity(0.9)),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -675,25 +987,41 @@ class _ItemResultCard extends StatelessWidget {
               ],
             ),
           ),
-          // Claim button
+          // Action Button Section
+          // Action Button Section
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withOpacity(0.15),
+              color: isMyRequest
+                  ? Colors.orange.withOpacity(0.1)
+                  : (isRequestedByOthers
+                      ? Colors.grey.withOpacity(0.1)
+                      : AppTheme.primaryBlue.withOpacity(0.15)),
               borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12)),
             ),
             child: TextButton(
-              onPressed: () => _showClaimDialog(context, item),
+              // FIX: Disable the button if it's requested by others
+              onPressed: isRequestedByOthers
+                  ? null // Button is disabled for everyone else
+                  : () => onActionPressed(item),
               child: Text(
-                isFound ? 'Claim Item' : 'Found Item',
-                style: const TextStyle(
-                  color: AppTheme.primaryBlue,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                isMyRequest
+                    ? 'Cancel Request' // Only the requester sees this text
+                    : (isRequestedByOthers
+                        ? 'Already Requested' // Others see this and can't click
+                        : (isFoundPost
+                            ? 'Claim Request item'
+                            : 'Claim Found Item')),
+                style: TextStyle(
+                    color: isMyRequest
+                        ? Colors.orange
+                        : (isRequestedByOthers
+                            ? Colors.grey // Visual cue that it's blocked
+                            : AppTheme.primaryBlue),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14),
               ),
             ),
           ),
@@ -701,69 +1029,52 @@ class _ItemResultCard extends StatelessWidget {
       ),
     );
   }
-  
-  void _showClaimDialog(BuildContext context, _ItemCard item) async {
-    // Ensure user is logged in
-    final firebaseUser = AuthService().currentFirebaseUser;
-    final userModel = AuthService().currentUser;
-    if (firebaseUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must be logged in to claim an item.'),
-          backgroundColor: AppTheme.errorRed,
-        ),
-      );
-      return;
-    }
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Claim Item'),
-        content: Text('Are you sure you want to claim "${item.title}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryBlue),
-            child: const Text('Yes, Claim'),
-          ),
-        ],
-      ),
+  // Helper widget for badges to keep code clean
+  Widget _StatusBadge({required String text, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)),
+      child: Text(text,
+          style: const TextStyle(
+              fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
     );
-
-    if (confirmed != true) return;
-
-    // Show loading indicator while claiming
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      await ItemService().claimItem(item.id, firebaseUser.uid, userModel?.fullName ?? '');
-      if (Navigator.canPop(context)) Navigator.pop(context); // remove loading
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ "${item.title}" claimed successfully'),
-          backgroundColor: AppTheme.successGreen,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      if (Navigator.canPop(context)) Navigator.pop(context); // remove loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to claim item: $e'),
-          backgroundColor: AppTheme.errorRed,
-        ),
-      );
-    }
   }
 }
 
+// 1. Fixed Model Class
+class _ItemCard {
+  final String id;
+  final String title;
+  final String category;
+  final String description;
+  final String location;
+  final String dateFound;
+  final String reportedBy;
+  final String reporterUid;
+  final String itemType;
+  final String status;
+  final String? imageUrl;
+  final String? claimerUid;
+
+  _ItemCard({
+    required this.id,
+    required this.title,
+    required this.category,
+    required this.description,
+    required this.location,
+    required this.dateFound,
+    required this.reportedBy,
+    required this.reporterUid,
+    required this.itemType,
+    required this.status,
+    this.imageUrl,
+    this.claimerUid,
+  });
+}
+
+// 2. InfoRow Helper
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String text;
@@ -794,10 +1105,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// EMPTY SEARCH STATE
-// ════════════════════════════════════════════════════════════════════════════
-
+// 3. Empty State Helper
 class _EmptySearchState extends StatelessWidget {
   const _EmptySearchState({super.key});
 
@@ -815,21 +1123,12 @@ class _EmptySearchState extends StatelessWidget {
               color: AppTheme.textGrey.withOpacity(0.4),
             ),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'No items found',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textGrey.withOpacity(0.7),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Try adjusting your filters or search terms',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: AppTheme.textGrey.withOpacity(0.6),
+                color: AppTheme.textGrey,
               ),
             ),
           ],
@@ -839,34 +1138,23 @@ class _EmptySearchState extends StatelessWidget {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// DATA MODEL
-// ════════════════════════════════════════════════════════════════════════════
+// 4. Status Badge Helper
+class _StatusBadge extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _StatusBadge({required this.text, required this.color});
 
-class _ItemCard {
-  final String id;
-  final String title;
-  final String category;
-  final String itemType;
-  final String description;
-  final String location;
-  final String dateFound;
-  final String reportedBy;
-  final String reporterUid;
-  final String status;
-  final String? imageUrl;
-
-  _ItemCard({
-    required this.id,
-    required this.title,
-    required this.category,
-    required this.itemType,
-    required this.description,
-    required this.location,
-    required this.dateFound,
-    required this.reportedBy,
-    required this.reporterUid,
-    required this.status,
-    this.imageUrl,
-  });
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)),
+      child: Text(
+        text,
+        style: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+      ),
+    );
+  }
 }

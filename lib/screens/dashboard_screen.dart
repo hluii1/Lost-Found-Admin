@@ -5,7 +5,7 @@ import 'package:lost_and_found/services/auth_service.dart';
 import 'package:lost_and_found/utils/app_routes.dart';
 import 'package:lost_and_found/utils/app_theme.dart';
 import 'package:lost_and_found/utils/constants.dart';
-import 'package:lost_and_found/screens/notification_preview.dart';
+import 'package:lost_and_found/screens/admin_logs_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final UserModel? user;
@@ -88,6 +88,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.pushNamed(context, AppRoutes.helpSupport,
             arguments: widget.user);
         break;
+      case _SidebarItem.adminLogs:
+        Navigator.pushNamed(
+          context,
+          AppRoutes.adminLogs,
+          arguments: widget.user, // Keeps the user data consistent
+        );
+        break;
+
       default:
         // Dashboard stays on dashboard
         break;
@@ -509,7 +517,7 @@ class _DashboardBody extends StatelessWidget {
 
           // ── Action cards ─────────────────────────────────────────────
           _DashboardCard(
-            label: 'I am Looking For Something',
+            label: 'I Lost Something',
             borderColor: AppTheme.errorRed,
             textColor: AppTheme.errorRed,
             icon: Icons.search_rounded,
@@ -518,7 +526,7 @@ class _DashboardBody extends StatelessWidget {
           const SizedBox(height: 14),
 
           _DashboardCard(
-            label: 'I Found/Lost Something',
+            label: 'I Found Something',
             borderColor: AppTheme.accentGreen,
             textColor: AppTheme.accentGreen,
             icon: Icons.add_box_outlined,

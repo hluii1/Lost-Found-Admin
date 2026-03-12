@@ -79,14 +79,9 @@ class AuthService {
             'User data not found. Please contact support.');
       }
       final data = userDoc.data()!;
-      _currentUser = UserModel(
-        uid: credential.user!.uid,
-        surname: data['surname'] ?? '',
-        firstName: data['firstName'] ?? '',
-        studentNumber: data['studentNumber'] ?? '',
-        ncstEmail: data['ncstEmail'] ?? '',
-        photoUrl: data['photoUrl'] ?? '',
-      );
+// Manually add the UID from the document ID
+      _currentUser =
+          UserModel.fromMap(data).copyWith(uid: credential.user!.uid);
 
       // Ensure user mapping exists (for existing users who login with email)
       final studentNum = data['studentNumber'] ?? '';
@@ -333,14 +328,9 @@ class AuthService {
       if (!userDoc.exists) return null;
 
       final data = userDoc.data()!;
-      _currentUser = UserModel(
-        uid: uid,
-        surname: data['surname'] ?? '',
-        firstName: data['firstName'] ?? '',
-        studentNumber: data['studentNumber'] ?? '',
-        ncstEmail: data['ncstEmail'] ?? '',
-        photoUrl: data['photoUrl'] ?? '',
-      );
+// Manually add the UID here too
+      _currentUser = UserModel.fromMap(data).copyWith(uid: uid);
+
       print('✅ User refreshed from Firestore: ${_currentUser?.fullName}');
       return _currentUser;
     } catch (e) {

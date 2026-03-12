@@ -31,7 +31,7 @@ class AppRoutes {
   static const String trackMyReport = '/track-my-report';
   static const String helpSupport = '/help-support';
   static const String notifications = '/notifications';
-  static const String adminLogs = '/adminLogs';
+  static const String adminLogs = '/admin-logs';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -85,8 +85,11 @@ class AppRoutes {
         return _fade(NotificationsScreen(user: user));
 
       case adminLogs:
-        final user = settings.arguments as UserModel?;
-        return _fade(const AdminLogsScreen());
+        // Explicitly cast the argument to UserModel?
+        final user = settings.arguments is UserModel
+            ? settings.arguments as UserModel
+            : null;
+        return _fade(AdminLogsScreen(user: user));
 
       default:
         return _fade(Scaffold(
