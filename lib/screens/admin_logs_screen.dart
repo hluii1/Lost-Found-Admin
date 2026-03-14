@@ -46,12 +46,12 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
   }
 
   // --- LOGIC: REVERT ---
-  Future<void> _handleRevert(String docId) async {
+  Future<void> _handleRevert(String docId, String itemId) async {
     bool? confirm = await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Revert Claim?"),
-        content: const Text("Reset status to Pending?"),
+        content: const Text("Reset status to Pending and restore item to claimable?"),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -64,15 +64,29 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
       ),
     );
     if (confirm == true) {
-      await FirebaseFirestore.instance
-          .collection('transaction_logs')
-          .doc(docId)
-          .update({
-        'status': 'Pending',
-        'verificationPhoto': null,
-        'approvedAt': null,
-        'processedByAdmin': null,
-      });
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      
+      // 1. Revert the transaction log
+      batch.update(
+        FirebaseFirestore.instance.collection('transaction_logs').doc(docId),
+        {
+          'status': 'Pending',
+          'verificationPhoto': null,
+          'approvedAt': null,
+          'processedByAdmin': null,
+        }
+      );
+      
+      // 2. Restore the item to claimable status
+      batch.update(
+        FirebaseFirestore.instance.collection('items').doc(itemId),
+        {
+          'status': 'active',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }
+      );
+      
+      await batch.commit();
     }
   }
 
@@ -106,22 +120,17 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
         'processedByAdmin': widget.user?.firstName ?? 'Admin',
       });
 
-      // 2. Automatically Reject all other "Pending" requests for this specific Item ID
-      QuerySnapshot otherRequests = await FirebaseFirestore.instance
-          .collection('transaction_logs')
-          .where('itemId', isEqualTo: itemId)
-          .where('status', isEqualTo: 'Pending')
-          .get();
+      // 2. Update the Item status to 'claimed' so it doesn't appear as claimable anymore
+      DocumentReference itemRef =
+          FirebaseFirestore.instance.collection('items').doc(itemId);
+      batch.update(itemRef, {
+        'status': 'claimed',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-      for (var doc in otherRequests.docs) {
-        if (doc.id != docId) {
-          batch.update(doc.reference, {
-            'status': 'Rejected',
-            'processedByAdmin': widget.user?.firstName ?? 'Admin',
-            'rejectionNote': 'Auto-rejected: Item claimed by another user.'
-          });
-        }
-      }
+      // 3. Allow other "Pending" requests to remain pending for admin review
+      // (Removed auto-rejection to allow admin to review multiple claims)
+      // This gives admin flexibility to approve the legitimate claimant and manually reject trolls
 
       await batch.commit();
       Navigator.pop(context);
@@ -129,6 +138,41 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
       Navigator.pop(context);
     }
   }
+
+  // --- LOGIC: REJECT CLAIM ---
+  Future<void> _handleRejectClaim(String docId) async {
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Reject Claim?"),
+        content: const Text("Mark this claim request as rejected?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text("Reject", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('transaction_logs')
+            .doc(docId)
+            .update({
+          'status': 'Rejected',
+          'approvedAt': FieldValue.serverTimestamp(),
+          'processedByAdmin': widget.user?.firstName ?? 'Admin',
+        });
+      } catch (e) {
+        debugPrint('Error rejecting claim: $e');
+      }
+    }
+  }
+
 
   void _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -311,7 +355,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                                     isEllipsis: true),
                                 const SizedBox(height: 15),
                                 Text(
-                                    "found by: ${data['itemAuthorName'] ?? 'N/A'}",
+                                    "${(data['itemAuthorType'] ?? 'Found').toLowerCase()} by: ${data['itemAuthorName'] ?? 'N/A'}",
                                     style: const TextStyle(
                                         color: Colors.grey, fontSize: 13)),
                                 Text("claimer: ${data['claimerName'] ?? 'N/A'}",
@@ -319,14 +363,31 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                                         fontWeight: FontWeight.bold,
                                         fontSize: 14)),
                                 if (isClaimed || isRejected)
-                                  Text(
-                                      "${isRejected ? 'rejected' : 'approved'} by: ${data['processedByAdmin'] ?? 'Admin'}",
-                                      style: TextStyle(
-                                          color: isRejected
-                                              ? Colors.red
-                                              : Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14)),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 8),
+                                      Text(
+                                          "${isRejected ? 'rejected' : 'approved'} by: ${data['processedByAdmin'] ?? 'Admin'}",
+                                          style: TextStyle(
+                                              color: isRejected
+                                                  ? Colors.red
+                                                  : Colors.green,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                          "${isRejected ? 'rejected' : 'approved'} date: ${_formatTimestamp(data['approvedAt'])}",
+                                          style: TextStyle(
+                                              color: isRejected
+                                                  ? Colors.red
+                                                      .withOpacity(0.7)
+                                                  : Colors.green
+                                                      .withOpacity(0.7),
+                                              fontSize: 12)),
+                                    ],
+                                  ),
                                 const SizedBox(height: 20),
                                 Row(
                                   children: [
@@ -341,11 +402,24 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                                               child: const Text("APPROVE",
                                                   style: TextStyle(
                                                       color: Colors.white)))),
+                                    if (!isClaimed && !isRejected)
+                                      const SizedBox(width: 8),
+                                    if (!isClaimed && !isRejected)
+                                      Expanded(
+                                          child: ElevatedButton(
+                                              onPressed: () =>
+                                                  _handleRejectClaim(doc.id),
+                                              style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      Colors.red),
+                                              child: const Text("REJECT",
+                                                  style: TextStyle(
+                                                      color: Colors.white)))),
                                     if (isClaimed)
                                       Expanded(
                                           child: ElevatedButton(
                                               onPressed: () =>
-                                                  _handleRevert(doc.id),
+                                                  _handleRevert(doc.id, data['itemId'] ?? ''),
                                               style: ElevatedButton.styleFrom(
                                                   backgroundColor:
                                                       Colors.orange),

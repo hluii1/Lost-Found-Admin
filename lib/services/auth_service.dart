@@ -338,6 +338,20 @@ class AuthService {
       return null;
     }
   }
+
+  /// Fetch a user by UID from Firestore
+  Future<UserModel?> getUserByUid(String uid) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      if (!userDoc.exists) return null;
+
+      final data = userDoc.data()!;
+      return UserModel.fromMap(data).copyWith(uid: uid);
+    } catch (e) {
+      print('❌ Error fetching user by UID: $e');
+      return null;
+    }
+  }
 }
 
 class AuthException implements Exception {

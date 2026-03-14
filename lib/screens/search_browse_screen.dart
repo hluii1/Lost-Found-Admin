@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:lost_and_found/models/user_model.dart';
+import 'package:lost_and_found/screens/item_detail_screen.dart';
 import 'package:lost_and_found/services/auth_service.dart';
 import 'package:lost_and_found/services/item_service.dart';
 import 'package:lost_and_found/services/notification_service.dart';
@@ -434,6 +435,11 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                 }).toList();
 
                 List<_ItemCard> filteredItems = allItems.where((item) {
+                  // EXCLUDE claimed or handed_over items from search results
+                  if (item.status == 'claimed' || item.status == 'handed_over') {
+                    return false;
+                  }
+
                   final searchText = _searchCtrl.text.toLowerCase();
                   if (searchText.isNotEmpty &&
                       !item.title.toLowerCase().contains(searchText) &&
@@ -489,8 +495,8 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
                       // Pass the functions from this State class down to the card
                       onCommentPressed: (selectedItem) =>
                           _showCommentBox(context, selectedItem),
-                      onActionPressed: (selectedItem) =>
-                          _handleAction(context, selectedItem),
+                      onActionPressed: (selectedItem, userAlreadyClaimed) =>
+                          _handleAction(context, selectedItem, userAlreadyClaimed: userAlreadyClaimed),
                     );
                   },
                 );
@@ -685,17 +691,16 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
     }
   }
 
-  void _handleAction(BuildContext context, _ItemCard item) {
-    if (item.status == 'Requested' || item.status == 'Claimable') {
-      _showRevertDialog(context, item); // Pass the item as the second argument
+  void _handleAction(BuildContext context, _ItemCard item, {bool userAlreadyClaimed = false}) {
+    if (userAlreadyClaimed) {
+      _showRevertDialog(context, item); // User already claimed, can cancel
     } else {
-      _showRequestDialog(context, item); // Pass the item as the second argument
+      _showRequestDialog(context, item); // User request to claim
     }
   }
 
   void _showRequestDialog(BuildContext context, _ItemCard item) async {
     final bool isFoundPost = item.itemType == 'Found';
-    final user = AuthService().currentUser;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -736,18 +741,17 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
       }
 
       try {
-        // 2. Update the Item document
+        // 2. Only update the Item status to show something is being requested
+        // DON'T store claimerUid on the item - this allows multiple students to claim
         await FirebaseFirestore.instance
             .collection('items')
             .doc(item.id)
             .update({
           'status': item.itemType == 'Found' ? 'Requested' : 'Claimable',
-          'claimerUid': currentUser.uid, // Guaranteed not to be empty now
-          'claimerName': currentUser.fullName ?? 'Anonymous',
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        // 3. Add to the Transaction Logs for the Admin
+        // 3. Add to the Transaction Logs for the Admin (source of truth for claims)
         await FirebaseFirestore.instance.collection('transaction_logs').add({
           'itemId': item.id,
           'itemName': item.title,
@@ -756,6 +760,7 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
           'itemLocation': item.location,
           'itemOriginalImage': item.imageUrl,
           'itemAuthorName': item.reportedBy,
+          'itemAuthorType': item.itemType, // 'Found' or 'Lost'
           'claimerUid': currentUser.uid, // Use the same verified UID
           'claimerName': currentUser.fullName ?? 'Anonymous',
           'status': 'Pending',
@@ -773,9 +778,6 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
   }
 
   void _showRevertDialog(BuildContext context, _ItemCard item) async {
-    // ADD THIS LINE to define currentUser
-    final currentUser = AuthService().currentUser;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -796,61 +798,123 @@ class _SearchBrowseScreenState extends State<SearchBrowseScreen> {
     );
 
     if (confirmed == true) {
-      // Now currentUser can be used safely if needed for logic here
-      await FirebaseFirestore.instance.collection('items').doc(item.id).update({
-        'status': item.itemType == 'Found' ? 'Found' : 'Lost',
-        'claimerUid': FieldValue.delete(),
-      });
+      final currentUser = AuthService().currentUser;
+      
+      try {
+        // 1. Find only THIS user's transaction_log for this item
+        var logQuery = await FirebaseFirestore.instance
+            .collection('transaction_logs')
+            .where('itemId', isEqualTo: item.id)
+            .where('claimerUid', isEqualTo: currentUser?.uid)
+            .get();
 
-      var logQuery = await FirebaseFirestore.instance
-          .collection('transaction_logs')
-          .where('itemId', isEqualTo: item.id)
-          .get();
+        // 2. Delete only the current user's claim entry
+        for (var doc in logQuery.docs) {
+          await doc.reference.delete();
+        }
 
-      for (var doc in logQuery.docs) {
-        await doc.reference.delete();
+        // 3. Only update item status if NO OTHER pending claims exist
+        var allPendingClaims = await FirebaseFirestore.instance
+            .collection('transaction_logs')
+            .where('itemId', isEqualTo: item.id)
+            .where('status', isEqualTo: 'Pending')
+            .get();
+
+        if (allPendingClaims.docs.isEmpty) {
+          // No other claims, revert item to active
+          await FirebaseFirestore.instance
+              .collection('items')
+              .doc(item.id)
+              .update({
+            'status': 'active',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Claim request cancelled.')),
+          );
+          // Refresh the search results
+          setState(() {});
+        }
+      } catch (e) {
+        debugPrint('Error cancelling claim: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error cancelling claim'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
 }
 
-class _ItemResultCard extends StatelessWidget {
+class _ItemResultCard extends StatefulWidget {
   final _ItemCard item;
   final Function(_ItemCard) onCommentPressed;
-  final Function(_ItemCard) onActionPressed; // 1. Define the callback
+  final Function(_ItemCard, bool) onActionPressed; // bool = userAlreadyClaimed
 
   const _ItemResultCard({
     required this.item,
     required this.onCommentPressed,
-    required this.onActionPressed, // 2. Add to constructor
+    required this.onActionPressed,
   });
+
+  @override
+  State<_ItemResultCard> createState() => _ItemResultCardState();
+}
+
+class _ItemResultCardState extends State<_ItemResultCard> {
+  late Future<bool> _userAlreadyClaimedFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _userAlreadyClaimedFuture = _checkIfUserAlreadyClaimed();
+  }
+
+  /// Check if the current user already has a pending/claimed request for this item
+  Future<bool> _checkIfUserAlreadyClaimed() async {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null || currentUser.uid.isEmpty) return false;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('transaction_logs')
+          .where('itemId', isEqualTo: widget.item.id)
+          .where('claimerUid', isEqualTo: currentUser.uid)
+          .get();
+
+      // If any transaction_log exists (not rejected), user already claimed it
+      return snapshot.docs.any((doc) => doc['status'] != 'Rejected');
+    } catch (e) {
+      debugPrint('Error checking claims: $e');
+      return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final currentUser = AuthService().currentUser;
+    final bool isFoundPost = widget.item.itemType == 'Found';
 
-    final bool isFoundPost = item.itemType == 'Found';
-
-    // 1. This checks if YOU are the one who clicked claim
-    final bool isMyRequest =
-        (item.status == 'Requested' || item.status == 'Claimable') &&
-            (item.claimerUid == currentUser?.uid);
-
-    // 2. This checks if SOMEONE ELSE clicked claim
-    final bool isRequestedByOthers =
-        (item.status == 'Requested' || item.status == 'Claimable') &&
-            (item.claimerUid != currentUser?.uid);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: AppTheme.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _navigateToDetail(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: AppTheme.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.borderColor.withOpacity(0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
@@ -865,9 +929,9 @@ class _ItemResultCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   clipBehavior: Clip.hardEdge,
-                  child: (item.imageUrl != null && item.imageUrl!.isNotEmpty)
+                  child: (widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty)
                       ? Image.network(
-                          item.imageUrl!,
+                          widget.item.imageUrl!,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               const Center(
@@ -891,7 +955,7 @@ class _ItemResultCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  item.title,
+                                  widget.item.title,
                                   style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.bold,
@@ -899,7 +963,7 @@ class _ItemResultCard extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  item.category,
+                                  widget.item.category,
                                   style: TextStyle(
                                       fontSize: 11,
                                       color:
@@ -922,8 +986,8 @@ class _ItemResultCard extends StatelessWidget {
                                       icon: const Icon(Icons.comment_outlined,
                                           size: 18,
                                           color: AppTheme.primaryBlue),
-                                      onPressed: () => onCommentPressed(
-                                          item) // Pass the 'item' object here
+                                      onPressed: () => widget.onCommentPressed(
+                                          widget.item) // Pass the 'item' object here
                                       ),
                                   const SizedBox(
                                       width:
@@ -938,7 +1002,7 @@ class _ItemResultCard extends StatelessWidget {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
-                                      item.itemType,
+                                      widget.item.itemType,
                                       style: const TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
@@ -949,12 +1013,12 @@ class _ItemResultCard extends StatelessWidget {
                               ),
                               // ... [Processing Badges logic stays the same below this]
                               // Processing Badges (Requested/Claimable)
-                              if (item.status == 'Claimable') ...[
+                              if (widget.item.status == 'Claimable') ...[
                                 const SizedBox(height: 4),
                                 _StatusBadge(
                                     text: 'Claimable', color: Colors.blue),
                               ],
-                              if (item.status == 'Requested') ...[
+                              if (widget.item.status == 'Requested') ...[
                                 const SizedBox(height: 4),
                                 _StatusBadge(
                                     text: 'Requested', color: Colors.orange),
@@ -965,7 +1029,7 @@ class _ItemResultCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        item.description,
+                        widget.item.description,
                         style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.textGrey.withOpacity(0.9)),
@@ -975,12 +1039,12 @@ class _ItemResultCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       _InfoRow(
                           icon: Icons.location_on_outlined,
-                          text: item.location),
+                          text: widget.item.location),
                       _InfoRow(
                           icon: Icons.calendar_today_outlined,
-                          text: item.dateFound),
+                          text: widget.item.dateFound),
                       _InfoRow(
-                          icon: Icons.person_outline, text: item.reportedBy),
+                          icon: Icons.person_outline, text: widget.item.reportedBy),
                     ],
                   ),
                 ),
@@ -988,47 +1052,67 @@ class _ItemResultCard extends StatelessWidget {
             ),
           ),
           // Action Button Section
-          // Action Button Section
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: isMyRequest
-                  ? Colors.orange.withOpacity(0.1)
-                  : (isRequestedByOthers
-                      ? Colors.grey.withOpacity(0.1)
-                      : AppTheme.primaryBlue.withOpacity(0.15)),
-              borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(12),
-                  bottomRight: Radius.circular(12)),
-            ),
-            child: TextButton(
-              // FIX: Disable the button if it's requested by others
-              onPressed: isRequestedByOthers
-                  ? null // Button is disabled for everyone else
-                  : () => onActionPressed(item),
-              child: Text(
-                isMyRequest
-                    ? 'Cancel Request' // Only the requester sees this text
-                    : (isRequestedByOthers
-                        ? 'Already Requested' // Others see this and can't click
+          FutureBuilder<bool>(
+            future: _userAlreadyClaimedFuture,
+            builder: (context, snapshot) {
+              final userAlreadyClaimed = snapshot.data ?? false;
+
+              return Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: userAlreadyClaimed
+                      ? Colors.orange.withOpacity(0.1)
+                      : AppTheme.primaryBlue.withOpacity(0.15),
+                  borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12)),
+                ),
+                child: TextButton(
+                  onPressed: () => widget.onActionPressed(widget.item, userAlreadyClaimed),
+                  child: Text(
+                    userAlreadyClaimed
+                        ? 'Cancel Request' // User already claimed, can cancel
                         : (isFoundPost
                             ? 'Claim Request item'
-                            : 'Claim Found Item')),
-                style: TextStyle(
-                    color: isMyRequest
-                        ? Colors.orange
-                        : (isRequestedByOthers
-                            ? Colors.grey // Visual cue that it's blocked
-                            : AppTheme.primaryBlue),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14),
-              ),
+                            : 'Claim Found Item'),
+                    style: TextStyle(
+                        color: userAlreadyClaimed
+                            ? Colors.orange
+                            : AppTheme.primaryBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14),
+                  ),
+                ),
+              );
+              },
             ),
-          ),
-        ],
+          ]),
+        ),
+      );
+  }
+  
+
+  void _navigateToDetail(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItemDetailScreen(
+          itemId: widget.item.id,
+          title: widget.item.title,
+          category: widget.item.category,
+          description: widget.item.description,
+          location: widget.item.location,
+          dateFound: widget.item.dateFound,
+          reportedBy: widget.item.reportedBy,
+          reporterUid: widget.item.reporterUid,
+          itemType: widget.item.itemType,
+          status: widget.item.status,
+          imageUrl: widget.item.imageUrl,
+        ),
       ),
     );
   }
+  
 
   // Helper widget for badges to keep code clean
   Widget _StatusBadge({required String text, required Color color}) {
